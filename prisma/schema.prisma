@@ -1,0 +1,180 @@
+// ─── Prisma Schema — FundForge ────────────────────────────────────────────────
+// Platform: Crowdfunding (Campaigns, Contributions, Reviews, Notifications)
+// Enums: Role, CampaignStatus, ContributionStatus, NotificationType
+// All models: soft delete (isDeleted), timestamps, @@map() table mapping
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  admin
+  creator
+  supporter
+}
+
+enum CampaignStatus {
+  pending
+  active
+  rejected
+  completed
+  cancelled
+}
+
+enum ContributionStatus {
+  pending
+  approved
+  rejected
+}
+
+enum NotificationType {
+  campaign_approved
+  campaign_rejected
+  campaign_completed
+  contribution_received
+  contribution_approved
+  contribution_rejected
+  system
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  uid       String   @unique // Firebase UID
+  name      String
+  email     String   @unique
+  photoURL  String?
+  role      Role     @default(supporter)
+  credits   Int      @default(100) // Starting credits
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  campaigns     Campaign[]
+  contributions Contribution[]
+  reviews       Review[]
+  notifications Notification[]
+
+  @@index([email])
+  @@index([uid])
+  @@map("users")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  iconName    String?
+  color       String?
+  description String?
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  campaigns Campaign[]
+
+  @@index([slug])
+  @@map("categories")
+}
+
+model Campaign {
+  id              String         @id @default(uuid())
+  title           String
+  story           String         @db.Text
+  imageUrl        String?
+  rewardInfo      String?        @db.Text
+  fundingGoal     Float
+  amountRaised    Float          @default(0)
+  minContribution Float
+  deadline        DateTime
+  status          CampaignStatus @default(pending)
+  creatorName     String // Denormalized for performance
+  creatorEmail    String // Denormalized for performance
+  isDeleted       Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations
+  creator    User     @relation(fields: [creatorId], references: [id])
+  creatorId  String
+  category   Category? @relation(fields: [categoryId], references: [id])
+  categoryId String?
+
+  contributions Contribution[]
+  reviews       Review[]
+
+  @@index([status])
+  @@index([creatorId])
+  @@index([categoryId])
+  @@index([amountRaised])
+  @@map("campaigns")
+}
+
+model Contribution {
+  id        String             @id @default(uuid())
+  amount    Float
+  message   String?
+  status    ContributionStatus @default(pending)
+  isDeleted Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  // Relations
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  campaignId  String
+  supporter   User     @relation(fields: [supporterId], references: [id])
+  supporterId String
+
+  @@index([campaignId])
+  @@index([supporterId])
+  @@index([status])
+  @@map("contributions")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  rating    Int // 1–5
+  comment   String?  @db.Text
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations — one review per user per campaign
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  campaignId String
+  author     User     @relation(fields: [authorId], references: [id])
+  authorId   String
+
+  @@unique([campaignId, authorId])
+  @@index([campaignId])
+  @@map("reviews")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  title     String
+  message   String
+  type      NotificationType @default(system)
+  read      Boolean          @default(false)
+  isDeleted Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@index([userId])
+  @@index([read])
+  @@map("notifications")
+}
